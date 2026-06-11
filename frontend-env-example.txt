@@ -1,0 +1,5 @@
+# Local development (Vite proxy handles /api so this can be empty locally)
+VITE_API_URL=
+
+# Production — set this in Vercel dashboard
+# VITE_API_URL=https://hdu-gantt-api.onrender.com

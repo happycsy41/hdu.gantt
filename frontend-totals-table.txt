@@ -1,0 +1,123 @@
+import { CATS, computeWeeklyLoE, fmt, WEEK_W } from '../utils/gantt'
+
+const LABEL_W = 220
+
+export default function TotalsTable({ projects, weeks, capacity }) {
+  if (!projects.length) return null
+  const wMap = computeWeeklyLoE(projects, weeks)
+
+  function capLimit(key) {
+    const c = capacity?.settings?.[key] || { count: 1, loePerHead: 40 }
+    return (c.count || 0) * (c.loePerHead || 0)
+  }
+
+  return (
+    <div style={{ marginTop: 22 }}>
+      <div style={sectionTitle}>Weekly LoE Totals by Category</div>
+      <div style={outer}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={tbl}>
+            <thead>
+              <tr>
+                <th style={{ ...stickyTh, width: LABEL_W, minWidth: LABEL_W, textAlign: 'left' }}>Category</th>
+                {weeks.map(wk => (
+                  <th key={wk.abs} style={{ ...wkTh, ...(wk.isToday ? todayThStyle : {}) }}>
+                    W{String(wk.week).padStart(2, '0')}<br />
+                    <span style={{ fontSize: 9, opacity: .55 }}>{wk.year}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {CATS.map(cat => {
+                const lim = capLimit(cat.key)
+                return (
+                  <tr key={cat.key}>
+                    <td style={{ ...labelCell, background: '#161a20' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <div style={{ width: 8, height: 8, borderRadius: 2, background: cat.color }} />
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 500 }}>{cat.label}</div>
+                          <div style={{ fontSize: 10, color: '#6b7280', marginTop: 1 }}>Cap: {lim} hrs/wk</div>
+                        </div>
+                      </div>
+                    </td>
+                    {weeks.map(wk => {
+                      const val = wMap[wk.abs]?.[cat.key] || 0
+                      const over = lim > 0 && val > lim
+                      const cls  = val === 0 ? 'zero' : over ? 'over' : 'ok'
+                      return (
+                        <td key={wk.abs} style={{ ...weekTd, ...(wk.isToday ? todayCellStyle : {}) }}>
+                          {val > 0 && (
+                            <div style={{ ...pill, ...(cls === 'ok' ? pillOk : pillOver) }}>
+                              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 8, fontWeight: 700 }}>{fmt(val)}</span>
+                              <span style={{ fontSize: 6.5, opacity: .7 }}>hrs</span>
+                            </div>
+                          )}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )
+              })}
+              {/* Grand total row */}
+              <tr style={{ borderTop: '2px solid rgba(255,255,255,.14)' }}>
+                <td style={{ ...labelCell, background: '#161a20', fontWeight: 600 }}>Grand Total</td>
+                {weeks.map(wk => {
+                  const w = wMap[wk.abs] || {}
+                  const tot = (w.eng || 0) + (w.sc || 0) + (w.prod || 0) + (w.pm || 0)
+                  return (
+                    <td key={wk.abs} style={{ ...weekTd, ...(wk.isToday ? todayCellStyle : {}) }}>
+                      {tot > 0 && (
+                        <div style={{ textAlign: 'center', fontFamily: "'IBM Plex Mono',monospace", fontSize: 8, fontWeight: 700, color: '#e8eaf0' }}>
+                          {fmt(tot)}<br /><span style={{ fontSize: 6.5, opacity: .6 }}>hrs</span>
+                        </div>
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div style={cards}>
+        {CATS.map(cat => {
+          const total = projects.reduce((s, p) => s + (p.loe?.[cat.key] || 0), 0)
+          return (
+            <div key={cat.key} style={card}>
+              <div style={cardLabel}>{cat.label}</div>
+              <div style={{ ...cardVal, color: cat.color }}>{fmt(total)}</div>
+              <div style={cardSub}>total man-hrs</div>
+            </div>
+          )
+        })}
+        <div style={{ ...card, borderColor: 'rgba(255,255,255,.2)' }}>
+          <div style={cardLabel}>Grand Total</div>
+          <div style={cardVal}>{fmt(projects.reduce((s, p) => s + Object.values(p.loe || {}).reduce((a, v) => a + v, 0), 0))}</div>
+          <div style={cardSub}>total man-hrs</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const outer       = { border: '1px solid rgba(255,255,255,.08)', borderRadius: 10, overflow: 'hidden', background: '#161a20' }
+const tbl         = { borderCollapse: 'collapse', width: '100%' }
+const sectionTitle = { fontSize: 12, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.06em', color: '#6b7280', marginBottom: 10 }
+const stickyTh    = { background: '#1e2330', fontSize: 11, fontWeight: 500, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.05em', padding: '8px 10px', position: 'sticky', left: 0, zIndex: 10, borderBottom: '1px solid rgba(255,255,255,.08)' }
+const wkTh        = { width: WEEK_W, minWidth: WEEK_W, textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,.08)', fontFamily: "'IBM Plex Mono',monospace", fontSize: 10, color: '#6b7280', padding: '8px 3px', background: '#1e2330', borderBottom: '1px solid rgba(255,255,255,.08)' }
+const todayThStyle = { color: '#3b82f6', background: 'rgba(59,130,246,.08)' }
+const labelCell   = { width: LABEL_W, minWidth: LABEL_W, padding: '8px 12px', position: 'sticky', left: 0, zIndex: 5, borderBottom: '1px solid rgba(255,255,255,.08)', verticalAlign: 'middle', color: '#e8eaf0' }
+const weekTd      = { width: WEEK_W, minWidth: WEEK_W, height: 38, padding: '2px 3px', borderLeft: '1px solid rgba(255,255,255,.08)', borderBottom: '1px solid rgba(255,255,255,.08)', textAlign: 'center', verticalAlign: 'middle' }
+const todayCellStyle = { background: 'rgba(59,130,246,.04)' }
+const pill        = { width: '100%', height: '100%', borderRadius: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 28 }
+const pillOk      = { background: 'rgba(34,197,94,.22)', color: '#4ade80' }
+const pillOver    = { background: 'rgba(239,68,68,.22)', color: '#f87171' }
+const cards       = { display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14 }
+const card        = { background: '#161a20', border: '1px solid rgba(255,255,255,.08)', borderRadius: 8, padding: '10px 16px', minWidth: 140 }
+const cardLabel   = { fontSize: 11, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }
+const cardVal     = { fontFamily: "'IBM Plex Mono',monospace", fontSize: 18, fontWeight: 500, color: '#e8eaf0' }
+const cardSub     = { fontSize: 11, color: '#6b7280', marginTop: 2 }

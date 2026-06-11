@@ -1,0 +1,138 @@
+import { useState, useEffect } from 'react'
+import { PHASES, getISOWeek } from '../utils/gantt'
+
+const DEFAULT_PHASES = Object.fromEntries(PHASES.map(p => [p.key, p.weeks]))
+const DEFAULT_LOE    = { eng: 0, sc: 0, prod: 0, pm: 0 }
+
+export default function ProjectModal({ project, onSave, onClose }) {
+  const today = new Date()
+  const [form, setForm] = useState({
+    wbs: '', name: '', start_week: getISOWeek(today), year: today.getFullYear(),
+    phases: { ...DEFAULT_PHASES }, loe: { ...DEFAULT_LOE },
+  })
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    if (project) {
+      setForm({
+        wbs: project.wbs, name: project.name,
+        start_week: project.start_week, year: project.year,
+        phases: { ...DEFAULT_PHASES, ...project.phases },
+        loe: { ...DEFAULT_LOE, ...project.loe },
+      })
+    }
+  }, [project])
+
+  const setField  = k  => e => setForm(f => ({ ...f, [k]: e.target.value }))
+  const setPhase  = k  => e => setForm(f => ({ ...f, phases: { ...f.phases, [k]: Number(e.target.value) } }))
+  const setLoe    = k  => e => setForm(f => ({ ...f, loe:    { ...f.loe,    [k]: Number(e.target.value) } }))
+
+  const submit = async e => {
+    e.preventDefault(); setErr('')
+    if (!form.wbs || !form.name) { setErr('WBS/Ref No and project name are required.'); return }
+    try { await onSave({ ...form, start_week: Number(form.start_week), year: Number(form.year) }) }
+    catch (ex) { setErr(ex.response?.data?.detail || 'Save failed') }
+  }
+
+  return (
+    <div style={ov} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={modal}>
+        <div style={hdr}>
+          <h2 style={htitle}>{project ? 'Edit project' : 'Add project'}</h2>
+          <button style={closeBtn} onClick={onClose}>✕</button>
+        </div>
+
+        <form onSubmit={submit}>
+          <div style={sec}>Project details</div>
+          <div style={row2}>
+            <FG label="WBS No / Ref No *"><input style={inp} value={form.wbs} onChange={setField('wbs')} placeholder="WBS-2024-001 / REF-001" required /></FG>
+            <FG label="Project name *"><input style={inp} value={form.name} onChange={setField('name')} placeholder="Pump Assembly Unit A" required /></FG>
+          </div>
+          <div style={row2}>
+            <FG label="Start week (1–52) *"><input style={inp} type="number" min="1" max="52" value={form.start_week} onChange={setField('start_week')} required /></FG>
+            <FG label="Year *"><input style={inp} type="number" min="2020" max="2040" value={form.year} onChange={setField('year')} required /></FG>
+          </div>
+
+          <div style={sec}>Phase durations &amp; LoE</div>
+          <table style={tbl}>
+            <thead>
+              <tr>
+                <Th>Phase</Th>
+                <Th right>Duration (wks)</Th>
+                <Th right>LoE (man-hrs)</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {PHASES.map((ph, i) => (
+                <tr key={ph.key} style={i % 2 === 1 ? { background: 'rgba(255,255,255,.02)' } : {}}>
+                  <td style={td}><PhaseName ph={ph} /></td>
+                  <td style={{ ...td, textAlign: 'right' }}>
+                    <input style={ninp} type="number" min="0" max="99" value={form.phases[ph.key] ?? ph.weeks} onChange={setPhase(ph.key)} />
+                  </td>
+                  <td style={{ ...td, textAlign: 'right' }}>
+                    {ph.loeGroup === 'eng' || ph.loeGroup === 'prod'
+                      ? <input style={ninp} type="number" min="0" value={form.loe[ph.loeGroup] || 0} onChange={setLoe(ph.loeGroup)} />
+                      : <span style={{ fontSize: 11, color: '#6b7280', fontStyle: 'italic' }}>—</span>}
+                  </td>
+                </tr>
+              ))}
+              {/* Supply Chain LoE row */}
+              <tr style={{ background: 'rgba(6,182,212,.07)' }}>
+                <td style={td}><PhaseName ph={{ color: '#06b6d4', label: 'Supply Chain LoE (Mat + Proc)' }} indent /></td>
+                <td style={{ ...td, textAlign: 'right', fontSize: 11, color: '#6b7280', fontStyle: 'italic' }}>combined</td>
+                <td style={{ ...td, textAlign: 'right' }}>
+                  <input style={ninp} type="number" min="0" value={form.loe.sc || 0} onChange={setLoe('sc')} />
+                </td>
+              </tr>
+              {/* PM LoE row */}
+              <tr style={{ background: 'rgba(167,139,250,.07)' }}>
+                <td style={td}><PhaseName ph={{ color: '#a78bfa', label: 'Project Mgmt LoE (PO → Doc)' }} /></td>
+                <td style={{ ...td, textAlign: 'right', fontSize: 11, color: '#6b7280', fontStyle: 'italic' }}>span</td>
+                <td style={{ ...td, textAlign: 'right' }}>
+                  <input style={ninp} type="number" min="0" value={form.loe.pm || 0} onChange={setLoe('pm')} />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          {err && <p style={errS}>{err}</p>}
+          <div style={footer}>
+            <button type="button" style={cancelBtn} onClick={onClose}>Cancel</button>
+            <button type="submit" style={saveBtn}>Save project</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function FG({ label, children }) {
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><label style={{ fontSize: 12, color: '#6b7280' }}>{label}</label>{children}</div>
+}
+function Th({ children, right }) {
+  return <th style={{ fontSize: 11, color: '#6b7280', textAlign: right ? 'right' : 'left', padding: '6px 8px', borderBottom: '1px solid rgba(255,255,255,.08)', textTransform: 'uppercase', letterSpacing: '.05em' }}>{children}</th>
+}
+function PhaseName({ ph, indent }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, paddingLeft: indent ? 12 : 0 }}>
+      <div style={{ width: 8, height: 8, borderRadius: 2, background: ph.color, flexShrink: 0 }} />
+      <span style={{ fontSize: 13 }}>{ph.label}</span>
+    </div>
+  )
+}
+
+const ov       = { position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center' }
+const modal    = { background:'#161a20',border:'1px solid rgba(255,255,255,.14)',borderRadius:12,width:600,maxWidth:'96vw',maxHeight:'92vh',overflowY:'auto',padding:28 }
+const hdr      = { display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20 }
+const htitle   = { fontSize:16,fontWeight:500,color:'#e8eaf0' }
+const closeBtn = { background:'none',border:'none',color:'#6b7280',fontSize:18,cursor:'pointer',padding:4,lineHeight:1 }
+const sec      = { fontSize:11,fontWeight:500,textTransform:'uppercase',letterSpacing:'.07em',color:'#6b7280',margin:'18px 0 10px',paddingBottom:5,borderBottom:'1px solid rgba(255,255,255,.08)' }
+const row2     = { display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10 }
+const inp      = { fontFamily:"'IBM Plex Sans',sans-serif",fontSize:13,background:'#1e2330',border:'1px solid rgba(255,255,255,.14)',color:'#e8eaf0',borderRadius:6,padding:'7px 11px',height:34,width:'100%',boxSizing:'border-box' }
+const tbl      = { width:'100%',borderCollapse:'collapse' }
+const td       = { padding:'5px 8px',verticalAlign:'middle',borderBottom:'1px solid rgba(255,255,255,.06)' }
+const ninp     = { fontFamily:"'IBM Plex Mono',monospace",fontSize:13,background:'#1e2330',border:'1px solid rgba(255,255,255,.14)',color:'#e8eaf0',borderRadius:6,padding:'4px 8px',height:28,width:82,textAlign:'right' }
+const errS     = { fontSize:12,color:'#f87171',padding:'8px 12px',background:'rgba(239,68,68,.1)',borderRadius:6,marginTop:12 }
+const footer   = { display:'flex',gap:8,justifyContent:'flex-end',marginTop:20,paddingTop:16,borderTop:'1px solid rgba(255,255,255,.08)' }
+const cancelBtn = { fontFamily:'inherit',fontSize:13,padding:'7px 16px',borderRadius:6,border:'1px solid rgba(255,255,255,.14)',background:'#1e2330',color:'#e8eaf0',cursor:'pointer' }
+const saveBtn   = { fontFamily:'inherit',fontSize:13,padding:'7px 16px',borderRadius:6,border:'none',background:'#3b82f6',color:'#fff',cursor:'pointer',fontWeight:500 }

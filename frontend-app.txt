@@ -1,0 +1,264 @@
+import { useState, useEffect, useCallback } from 'react'
+import Header        from './components/Header'
+import GanttChart    from './components/GanttChart'
+import TotalsTable   from './components/TotalsTable'
+import ProjectModal  from './components/ProjectModal'
+import CapacityModal from './components/CapacityModal'
+import AuthModal     from './components/AuthModal'
+import {
+  getMe, logout,
+  getProjects, createProject, updateProject, deleteProject,
+  getCapacity, upsertCapacity,
+} from './api'
+import { absW, buildWeeks, getISOWeek } from './utils/gantt'
+
+const WEEK_OPTIONS = [8, 12, 16, 20, 26, 32, 39, 52]
+
+export default function App() {
+  // ── Auth ────────────────────────────────────────────────────────────
+  const [user,     setUser]     = useState(null)
+  const [authReady, setAuthReady] = useState(false)   // checked token on mount
+
+  // ── Data ────────────────────────────────────────────────────────────
+  const [projects,  setProjects]  = useState([])
+  const [capacity,  setCapacity]  = useState(null)
+  const [loading,   setLoading]   = useState(false)
+  const [error,     setError]     = useState('')
+
+  // ── View ────────────────────────────────────────────────────────────
+  const today = new Date()
+  const [numWeeks,   setNumWeeks]   = useState(16)
+  const [startWeek,  setStartWeek]  = useState(getISOWeek(today))
+  const [startYear,  setStartYear]  = useState(today.getFullYear())
+
+  // ── Modals ──────────────────────────────────────────────────────────
+  const [showProjModal, setShowProjModal] = useState(false)
+  const [editProject,   setEditProject]   = useState(null)   // null = add, object = edit
+  const [showCapModal,  setShowCapModal]  = useState(false)
+
+  // ── Bootstrap ───────────────────────────────────────────────────────
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    if (!token) { setAuthReady(true); return }
+    getMe()
+      .then(u => { setUser(u); setAuthReady(true) })
+      .catch(() => { localStorage.removeItem('token'); setAuthReady(true) })
+  }, [])
+
+  const loadData = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const [projs, cap] = await Promise.all([getProjects(), getCapacity()])
+      setProjects(projs)
+      setCapacity(cap)
+    } catch (e) {
+      setError('Failed to load data. Please refresh.')
+    } finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { if (user) loadData() }, [user, loadData])
+
+  // ── Auth handlers ────────────────────────────────────────────────────
+  const handleAuth = async () => {
+    const u = await getMe()
+    setUser(u)
+  }
+  const handleLogout = () => {
+    logout()
+    setUser(null)
+    setProjects([])
+    setCapacity(null)
+  }
+
+  // ── Project CRUD ─────────────────────────────────────────────────────
+  const handleSaveProject = async body => {
+    if (editProject) {
+      const updated = await updateProject(editProject.id, body)
+      setProjects(ps => ps.map(p => p.id === updated.id ? updated : p))
+    } else {
+      const created = await createProject(body)
+      setProjects(ps => [...ps, created])
+    }
+    setShowProjModal(false)
+    setEditProject(null)
+  }
+
+  const handleEdit = proj => {
+    setEditProject(proj)
+    setShowProjModal(true)
+  }
+
+  const handleDelete = async id => {
+    if (!window.confirm('Remove this project?')) return
+    await deleteProject(id)
+    setProjects(ps => ps.filter(p => p.id !== id))
+  }
+
+  // ── Capacity ─────────────────────────────────────────────────────────
+  const handleSaveCapacity = async settings => {
+    const updated = await upsertCapacity(settings)
+    setCapacity(updated)
+    setShowCapModal(false)
+  }
+
+  // ── Derived view ─────────────────────────────────────────────────────
+  const vsAbs = absW(startYear, startWeek)
+  const weeks  = buildWeeks(vsAbs, numWeeks)
+
+  // Stats
+  const nowAbs = absW(today.getFullYear(), getISOWeek(today))
+
+  // ── Render ────────────────────────────────────────────────────────────
+  if (!authReady) return <Splash text="Loading…" />
+  if (!user)      return <AuthModal onAuth={handleAuth} />
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#0d0f12' }}>
+      <Header
+        user={user}
+        onAdd={() => { setEditProject(null); setShowProjModal(true) }}
+        onCapacity={() => setShowCapModal(true)}
+        onLogout={handleLogout}
+      />
+
+      <div style={container}>
+        {/* Stats */}
+        <div style={statsRow}>
+          <StatCard label="Total" value={projects.length} />
+          <StatCard label="Active" value={projects.filter(p => {
+            // project end = sum of all phase weeks from start
+            const totalW = Object.values(p.phases || {}).reduce((a, v) => a + v, 0)
+            return absW(p.year, p.start_week) + totalW >= nowAbs
+          }).length} />
+        </div>
+
+        {error && <div style={errBanner}>{error}</div>}
+
+        {/* Toolbar */}
+        <div style={toolbar}>
+          <label style={tlabel}>Start week</label>
+          <input style={tinput} type="number" min="1" max="52" value={startWeek}
+            onChange={e => setStartWeek(Number(e.target.value))} style={{ ...tinput, width: 68 }} />
+          <label style={tlabel}>Year</label>
+          <input style={tinput} type="number" min="2020" max="2040" value={startYear}
+            onChange={e => setStartYear(Number(e.target.value))} style={{ ...tinput, width: 80 }} />
+          <label style={tlabel}>Show</label>
+          <select style={tinput} value={numWeeks} onChange={e => setNumWeeks(Number(e.target.value))}>
+            {WEEK_OPTIONS.map(n => <option key={n} value={n}>{n} weeks</option>)}
+          </select>
+          <div style={{ marginLeft: 'auto' }}>
+            <button style={smBtn} onClick={() => exportCSV(projects)}>Export CSV</button>
+          </div>
+        </div>
+
+        {/* Legend */}
+        <Legend />
+
+        {/* Gantt */}
+        {loading
+          ? <Splash text="Loading projects…" inline />
+          : <GanttChart projects={projects} weeks={weeks} vsAbs={vsAbs} nw={numWeeks} onEdit={handleEdit} onDelete={handleDelete} />
+        }
+
+        {/* Totals */}
+        <TotalsTable projects={projects} weeks={weeks} capacity={capacity} />
+      </div>
+
+      {showProjModal && (
+        <ProjectModal
+          project={editProject}
+          onSave={handleSaveProject}
+          onClose={() => { setShowProjModal(false); setEditProject(null) }}
+        />
+      )}
+      {showCapModal && (
+        <CapacityModal
+          initial={capacity}
+          onSave={handleSaveCapacity}
+          onClose={() => setShowCapModal(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Small helpers ─────────────────────────────────────────────────────────
+function StatCard({ label, value }) {
+  return (
+    <div style={statCard}>
+      <div style={statLabel}>{label}</div>
+      <div style={statValue}>{value}</div>
+    </div>
+  )
+}
+
+function Legend() {
+  const PHASES = [
+    { label: 'PO Review',        color: '#3b82f6' },
+    { label: 'Engineering',       color: '#8b5cf6' },
+    { label: 'Material Planning', color: '#06b6d4' },
+    { label: 'Procurement',       color: '#f59e0b' },
+    { label: 'Production',        color: '#ec4899' },
+    { label: 'Holiday',           color: '#6b7280' },
+    { label: 'Documentation',     color: '#10b981' },
+    { label: 'Float',             color: '#f97316' },
+  ]
+  return (
+    <div style={legendRow}>
+      {PHASES.map(ph => (
+        <div key={ph.label} style={legendItem}>
+          <div style={{ width: 9, height: 9, borderRadius: 2, background: ph.color, flexShrink: 0 }} />
+          {ph.label}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function Splash({ text, inline }) {
+  return (
+    <div style={inline ? splashInline : splashFull}>
+      <span style={{ color: '#6b7280', fontSize: 14 }}>{text}</span>
+    </div>
+  )
+}
+
+function exportCSV(projects) {
+  const PHASE_KEYS = ['po','eng','mat','proc','prod','hol','doc','float']
+  const PHASE_LABELS = ['PO Review','Engineering','Material Planning','Procurement','Production','Holiday','Documentation','Float']
+  const rows = [
+    ['WBS/Ref No','Project Name','Start Week','Year',
+      ...PHASE_LABELS.map(l => l + ' (wks)'),
+      'Eng LoE','SC LoE','Prod LoE','PM LoE','Total LoE'],
+  ]
+  projects.forEach(p => {
+    const loe = p.loe || {}
+    const tot = (loe.eng||0)+(loe.sc||0)+(loe.prod||0)+(loe.pm||0)
+    rows.push([
+      p.wbs, p.name, p.start_week, p.year,
+      ...PHASE_KEYS.map(k => p.phases?.[k] ?? 0),
+      loe.eng||0, loe.sc||0, loe.prod||0, loe.pm||0, tot,
+    ])
+  })
+  const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n')
+  const a = document.createElement('a')
+  a.href = 'data:text/csv,' + encodeURIComponent(csv)
+  a.download = 'hdu-projects.csv'
+  a.click()
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────
+const container  = { maxWidth: 1700, margin: '0 auto', padding: '22px 28px' }
+const statsRow   = { display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap' }
+const statCard   = { background: '#161a20', border: '1px solid rgba(255,255,255,.08)', borderRadius: 8, padding: '10px 18px', minWidth: 110 }
+const statLabel  = { fontSize: 11, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 3 }
+const statValue  = { fontFamily: "'IBM Plex Mono',monospace", fontSize: 20, fontWeight: 500 }
+const errBanner  = { background: 'rgba(239,68,68,.12)', border: '1px solid rgba(239,68,68,.3)', color: '#f87171', borderRadius: 7, padding: '10px 14px', fontSize: 13, marginBottom: 16 }
+const toolbar    = { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }
+const tlabel     = { fontSize: 12, color: '#6b7280' }
+const tinput     = { fontFamily: "'IBM Plex Sans',sans-serif", fontSize: 13, background: '#1e2330', border: '1px solid rgba(255,255,255,.14)', color: '#e8eaf0', borderRadius: 6, padding: '6px 10px', height: 32 }
+const smBtn      = { fontFamily: 'inherit', fontSize: 12, padding: '5px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,.14)', background: '#1e2330', color: '#e8eaf0', cursor: 'pointer' }
+const legendRow  = { display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 14 }
+const legendItem = { display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#6b7280' }
+const splashFull = { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+const splashInline = { padding: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }

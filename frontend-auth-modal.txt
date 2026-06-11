@@ -1,0 +1,74 @@
+import { useState } from 'react'
+import { login, register } from '../api'
+
+export default function AuthModal({ onAuth }) {
+  const [mode, setMode]   = useState('login')  // 'login' | 'register'
+  const [form, setForm]   = useState({ email: '', username: '', password: '' })
+  const [err,  setErr]    = useState('')
+  const [busy, setBusy]   = useState(false)
+
+  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const submit = async e => {
+    e.preventDefault(); setErr(''); setBusy(true)
+    try {
+      if (mode === 'register') {
+        await register(form.email, form.username, form.password)
+      }
+      await login(form.username, form.password)
+      onAuth()
+    } catch (ex) {
+      setErr(ex.response?.data?.detail || 'Something went wrong')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div style={ov}>
+      <div style={card}>
+        <div style={logo}>HDU <span style={{ color: '#e8eaf0', fontWeight: 500 }}>Volume Products</span></div>
+        <h2 style={title}>Gantt Planner</h2>
+
+        <div style={tabs}>
+          {['login','register'].map(m => (
+            <button key={m} style={tabBtn(mode === m)} onClick={() => { setMode(m); setErr('') }}>
+              {m === 'login' ? 'Sign in' : 'Register'}
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={submit}>
+          {mode === 'register' && (
+            <div style={fg}>
+              <label style={lbl}>Email</label>
+              <input style={inp} type="email" value={form.email} onChange={set('email')} required placeholder="you@example.com" />
+            </div>
+          )}
+          <div style={fg}>
+            <label style={lbl}>Username</label>
+            <input style={inp} type="text" value={form.username} onChange={set('username')} required placeholder="username" />
+          </div>
+          <div style={fg}>
+            <label style={lbl}>Password</label>
+            <input style={inp} type="password" value={form.password} onChange={set('password')} required placeholder="••••••••" />
+          </div>
+          {err && <p style={errS}>{err}</p>}
+          <button style={submitBtn} type="submit" disabled={busy}>
+            {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+const ov     = { position:'fixed',inset:0,background:'#0d0f12',display:'flex',alignItems:'center',justifyContent:'center',zIndex:999 }
+const card   = { background:'#161a20',border:'1px solid rgba(255,255,255,.1)',borderRadius:14,padding:36,width:360,maxWidth:'92vw' }
+const logo   = { fontFamily:"'IBM Plex Mono',monospace",fontSize:12,letterSpacing:'.08em',color:'#6b7280',marginBottom:8 }
+const title  = { fontSize:22,fontWeight:500,color:'#e8eaf0',marginBottom:22 }
+const tabs   = { display:'flex',gap:4,marginBottom:22,background:'#1e2330',borderRadius:8,padding:4 }
+const tabBtn = active => ({ flex:1,padding:'7px 0',borderRadius:6,border:'none',cursor:'pointer',fontSize:13,fontFamily:'inherit',background:active?'#3b82f6':'transparent',color:active?'#fff':'#6b7280',transition:'all .15s' })
+const fg     = { display:'flex',flexDirection:'column',gap:5,marginBottom:12 }
+const lbl    = { fontSize:12,color:'#6b7280' }
+const inp    = { fontFamily:"'IBM Plex Sans',sans-serif",fontSize:13,background:'#1e2330',border:'1px solid rgba(255,255,255,.14)',color:'#e8eaf0',borderRadius:6,padding:'8px 12px',height:36,width:'100%',boxSizing:'border-box' }
+const errS   = { fontSize:12,color:'#f87171',marginBottom:10,padding:'8px 12px',background:'rgba(239,68,68,.1)',borderRadius:6 }
+const submitBtn = { width:'100%',padding:'10px',borderRadius:7,border:'none',background:'#3b82f6',color:'#fff',fontSize:14,fontFamily:'inherit',fontWeight:500,cursor:'pointer',marginTop:6 }

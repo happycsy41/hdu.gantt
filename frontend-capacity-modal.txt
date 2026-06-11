@@ -1,0 +1,88 @@
+import { useState, useEffect } from 'react'
+import { CATS } from '../utils/gantt'
+
+const DEFAULT = Object.fromEntries(CATS.map(c => [c.key, { count: 1, loePerHead: 40 }]))
+
+export default function CapacityModal({ initial, onSave, onClose }) {
+  const [cap, setCap] = useState(DEFAULT)
+
+  useEffect(() => {
+    if (initial?.settings) setCap({ ...DEFAULT, ...initial.settings })
+  }, [initial])
+
+  const set = (catKey, field) => e => {
+    const val = Number(e.target.value) || 0
+    setCap(c => ({ ...c, [catKey]: { ...c[catKey], [field]: val } }))
+  }
+
+  const submit = async e => {
+    e.preventDefault()
+    await onSave(cap)
+  }
+
+  return (
+    <div style={ov} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={modal}>
+        <div style={hdr}>
+          <h2 style={htitle}>Capacity Settings</h2>
+          <button style={closeBtn} onClick={onClose}>✕</button>
+        </div>
+        <p style={desc}>Set headcount and per-person weekly LoE limit. The totals table uses these to flag overloads in red.</p>
+        <form onSubmit={submit}>
+          <table style={tbl}>
+            <thead>
+              <tr>
+                {['Discipline','No. of people','LoE / person / wk (hrs)','Total cap / wk'].map((h, i) => (
+                  <th key={i} style={{ ...th, textAlign: i > 0 ? 'right' : 'left' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {CATS.map(cat => {
+                const c = cap[cat.key] || { count: 1, loePerHead: 40 }
+                const total = (c.count || 0) * (c.loePerHead || 0)
+                return (
+                  <tr key={cat.key}>
+                    <td style={td}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <div style={{ width: 8, height: 8, borderRadius: 2, background: cat.color }} />
+                        {cat.label}
+                      </div>
+                    </td>
+                    <td style={{ ...td, textAlign: 'right' }}>
+                      <input style={ninp} type="number" min="0" max="999" value={c.count} onChange={set(cat.key, 'count')} />
+                    </td>
+                    <td style={{ ...td, textAlign: 'right' }}>
+                      <input style={ninp} type="number" min="0" max="999" value={c.loePerHead} onChange={set(cat.key, 'loePerHead')} />
+                    </td>
+                    <td style={{ ...td, textAlign: 'right', fontFamily: "'IBM Plex Mono',monospace", color: '#3b82f6', fontWeight: 500 }}>
+                      {total} hrs
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          <div style={footer}>
+            <button type="button" style={cancelBtn} onClick={onClose}>Cancel</button>
+            <button type="submit" style={saveBtn}>Save settings</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+const ov       = { position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center' }
+const modal    = { background:'#161a20',border:'1px solid rgba(255,255,255,.14)',borderRadius:12,width:580,maxWidth:'96vw',padding:28 }
+const hdr      = { display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12 }
+const htitle   = { fontSize:16,fontWeight:500,color:'#e8eaf0' }
+const closeBtn = { background:'none',border:'none',color:'#6b7280',fontSize:18,cursor:'pointer',padding:4,lineHeight:1 }
+const desc     = { fontSize:13,color:'#6b7280',marginBottom:20,lineHeight:1.6 }
+const tbl      = { width:'100%',borderCollapse:'collapse',marginBottom:4 }
+const th       = { fontSize:11,color:'#6b7280',padding:'6px 8px',borderBottom:'1px solid rgba(255,255,255,.08)',textTransform:'uppercase',letterSpacing:'.05em',fontWeight:500 }
+const td       = { padding:'7px 8px',verticalAlign:'middle',borderBottom:'1px solid rgba(255,255,255,.06)',fontSize:13,color:'#e8eaf0' }
+const ninp     = { fontFamily:"'IBM Plex Mono',monospace",fontSize:13,background:'#1e2330',border:'1px solid rgba(255,255,255,.14)',color:'#e8eaf0',borderRadius:6,padding:'4px 8px',height:28,width:88,textAlign:'right' }
+const footer   = { display:'flex',gap:8,justifyContent:'flex-end',marginTop:20,paddingTop:16,borderTop:'1px solid rgba(255,255,255,.08)' }
+const cancelBtn = { fontFamily:'inherit',fontSize:13,padding:'7px 16px',borderRadius:6,border:'1px solid rgba(255,255,255,.14)',background:'#1e2330',color:'#e8eaf0',cursor:'pointer' }
+const saveBtn   = { fontFamily:'inherit',fontSize:13,padding:'7px 16px',borderRadius:6,border:'none',background:'#3b82f6',color:'#fff',cursor:'pointer',fontWeight:500 }

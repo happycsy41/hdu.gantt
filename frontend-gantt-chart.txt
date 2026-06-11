@@ -1,0 +1,135 @@
+import { buildSegments, pmPerWeek, PM_PHASES, PM_COLOR, WEEK_W, fmt } from '../utils/gantt'
+
+const LABEL_W = 220
+
+export default function GanttChart({ projects, weeks, vsAbs, nw, onEdit, onDelete }) {
+  return (
+    <div style={outer}>
+      <div style={scroll}>
+        <table style={tbl}>
+          <thead>
+            <tr>
+              <th style={{ ...stickyTh, textAlign: 'left', width: LABEL_W, minWidth: LABEL_W }}>Project</th>
+              {weeks.map(wk => (
+                <th key={wk.abs} style={{ ...wkTh, ...(wk.isToday ? todayThStyle : {}) }}>
+                  W{String(wk.week).padStart(2, '0')}<br />
+                  <span style={{ fontSize: 9, opacity: .55 }}>{wk.year}</span>
+                </th>
+              ))}
+              <th style={actionsTh}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!projects.length
+              ? <tr><td colSpan={nw + 2} style={emptyTd}>No projects yet — click "+ Add project"</td></tr>
+              : projects.map(proj => <ProjectRows key={proj.id} proj={proj} weeks={weeks} vsAbs={vsAbs} nw={nw} onEdit={onEdit} onDelete={onDelete} />)
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function ProjectRows({ proj, weeks, vsAbs, nw, onEdit, onDelete }) {
+  const segs    = buildSegments(proj)
+  const ppw     = pmPerWeek(proj)
+  const pmSegs  = segs.filter(s => PM_PHASES.includes(s.key))
+  const hasPM   = (proj.loe?.pm || 0) > 0 && ppw > 0
+
+  return (
+    <>
+      {/* Main bar row */}
+      <tr>
+        <td style={labelCell}>
+          <div style={wbsCode}>{proj.wbs}</div>
+          <div style={projName}>{proj.name}</div>
+        </td>
+        {weeks.map(wk => (
+          <td key={wk.abs} style={{ ...weekCell, ...(wk.isToday ? todayCellStyle : {}) }}>
+            {segs.map(seg => {
+              if (seg.dur <= 0 || wk.abs !== seg.absStart) return null
+              const ve = Math.min(seg.absStart + seg.dur, vsAbs + nw)
+              const vs = Math.max(seg.absStart, vsAbs)
+              const vd = ve - vs; if (vd <= 0) return null
+              const px = vd * WEEK_W - 2
+              if (seg.loeGroup && seg.loePerWeek > 0) {
+                return (
+                  <div key={seg.key} style={{ ...phaseBlock, left: 1, width: px, background: seg.color, padding: 0, overflow: 'hidden' }}>
+                    {Array.from({ length: vd }, (_, i) => (
+                      <div key={i} style={{ ...loeCell, borderRight: i < vd - 1 ? '1px solid rgba(0,0,0,.2)' : 'none' }}>
+                        <span style={loeVal}>{fmt(seg.loePerWeek)}</span>
+                        <span style={loeUnit}>hrs</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              }
+              return (
+                <div key={seg.key} style={{ ...phaseBlock, left: 1, width: px, background: seg.color, justifyContent: 'center' }}>
+                  {seg.dur >= 2 ? seg.label : ''}
+                </div>
+              )
+            })}
+          </td>
+        ))}
+        <td style={actionsCell}>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button style={editBtn} onClick={() => onEdit(proj)}>Edit</button>
+            <button style={delBtn}  onClick={() => onDelete(proj.id)}>Del</button>
+          </div>
+        </td>
+      </tr>
+
+      {/* PM LoE sub-row */}
+      {hasPM && (
+        <tr>
+          <td style={{ ...labelCell, fontSize: 11, color: PM_COLOR, fontStyle: 'italic', paddingLeft: 24 }}>↳ PM LoE</td>
+          {weeks.map(wk => (
+            <td key={wk.abs} style={{ ...weekCell, height: 34, ...(wk.isToday ? todayCellStyle : {}) }}>
+              {pmSegs.map(seg => {
+                if (seg.dur <= 0 || wk.abs !== seg.absStart) return null
+                const ve = Math.min(seg.absStart + seg.dur, vsAbs + nw)
+                const vd = ve - Math.max(seg.absStart, vsAbs); if (vd <= 0) return null
+                const px = vd * WEEK_W - 2
+                return (
+                  <div key={seg.key} style={{ ...phaseBlock, top: 3, height: 28, left: 1, width: px, background: PM_COLOR, padding: 0, overflow: 'hidden' }}>
+                    {Array.from({ length: vd }, (_, i) => (
+                      <div key={i} style={{ ...loeCell, borderRight: i < vd - 1 ? '1px solid rgba(0,0,0,.18)' : 'none' }}>
+                        <span style={loeVal}>{fmt(ppw)}</span>
+                        <span style={loeUnit}>hrs</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })}
+            </td>
+          ))}
+          <td style={{ ...actionsCell, background: '#161a20' }} />
+        </tr>
+      )}
+    </>
+  )
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────
+const outer       = { border: '1px solid rgba(255,255,255,.08)', borderRadius: 10, overflow: 'hidden', background: '#161a20' }
+const scroll      = { overflowX: 'auto' }
+const tbl         = { borderCollapse: 'collapse', width: '100%' }
+const stickyTh    = { background: '#1e2330', fontSize: 11, fontWeight: 500, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.05em', padding: '9px 10px', position: 'sticky', left: 0, zIndex: 10, borderBottom: '1px solid rgba(255,255,255,.08)' }
+const wkTh        = { width: WEEK_W, minWidth: WEEK_W, textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,.08)', fontFamily: "'IBM Plex Mono',monospace", fontSize: 10, color: '#6b7280', padding: '9px 3px', background: '#1e2330', borderBottom: '1px solid rgba(255,255,255,.08)' }
+const todayThStyle = { color: '#3b82f6', background: 'rgba(59,130,246,.08)' }
+const actionsTh   = { width: 88, minWidth: 88, position: 'sticky', right: 0, background: '#1e2330', fontSize: 11, fontWeight: 500, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.05em', padding: '9px 8px', borderLeft: '1px solid rgba(255,255,255,.08)', borderBottom: '1px solid rgba(255,255,255,.08)' }
+const labelCell   = { width: LABEL_W, minWidth: LABEL_W, padding: '0 12px', height: 44, position: 'sticky', left: 0, zIndex: 5, background: '#161a20', borderBottom: '1px solid rgba(255,255,255,.08)', verticalAlign: 'middle' }
+const weekCell    = { width: WEEK_W, minWidth: WEEK_W, height: 44, padding: 0, borderLeft: '1px solid rgba(255,255,255,.08)', borderBottom: '1px solid rgba(255,255,255,.08)', position: 'relative' }
+const todayCellStyle = { background: 'rgba(59,130,246,.04)' }
+const actionsCell = { padding: '0 8px', position: 'sticky', right: 0, background: '#161a20', zIndex: 5, borderLeft: '1px solid rgba(255,255,255,.08)', borderBottom: '1px solid rgba(255,255,255,.08)', verticalAlign: 'middle' }
+const emptyTd     = { textAlign: 'center', padding: 44, color: '#6b7280', fontSize: 14 }
+const phaseBlock  = { position: 'absolute', top: 7, height: 30, borderRadius: 3, display: 'flex', alignItems: 'center', fontSize: 9, fontWeight: 600, color: 'rgba(0,0,0,.75)', zIndex: 1, cursor: 'default' }
+const loeCell     = { width: WEEK_W, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
+const loeVal      = { fontFamily: "'IBM Plex Mono',monospace", fontSize: 8, fontWeight: 700, color: 'rgba(0,0,0,.82)' }
+const loeUnit     = { fontSize: 7, opacity: .65, color: 'rgba(0,0,0,.7)' }
+const wbsCode     = { fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, color: '#3b82f6', fontWeight: 500 }
+const projName    = { fontSize: 12, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 196 }
+const editBtn     = { fontFamily: 'inherit', fontSize: 11, padding: '4px 9px', borderRadius: 5, border: '1px solid rgba(255,255,255,.14)', background: '#1e2330', color: '#e8eaf0', cursor: 'pointer' }
+const delBtn      = { fontFamily: 'inherit', fontSize: 11, padding: '4px 9px', borderRadius: 5, border: '1px solid rgba(239,68,68,.35)', background: 'transparent', color: '#f87171', cursor: 'pointer' }
